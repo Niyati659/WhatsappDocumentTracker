@@ -1,3 +1,4 @@
+import os
 import sys
 from pathlib import Path
 
@@ -9,9 +10,36 @@ load_dotenv(Path(__file__).parent / ".env")
 
 from app import db, main
 
-db.DATABASE_URL = None
-db.DB_PATH = str(Path(__file__).parent / "logic_test.db")
-Path(db.DB_PATH).unlink(missing_ok=True)
+POSTGRES = "--postgres" in sys.argv
+SCHEMA = "smoketest"
+
+
+def with_hostaddr(url):
+    addr = os.environ.get("NEON_HOSTADDR")
+    return url + ("&" if "?" in url else "?") + f"hostaddr={addr}" if addr else url
+
+
+def drop_schema():
+    import psycopg
+    from dotenv import dotenv_values
+
+    base = with_hostaddr(dotenv_values(Path(__file__).parent / ".env")["DATABASE_URL_UNPOOLED"])
+    with psycopg.connect(base, autocommit=True) as c:
+        c.execute(f"DROP SCHEMA IF EXISTS {SCHEMA} CASCADE")
+    return base
+
+
+if POSTGRES:
+    base = drop_schema()
+    import psycopg
+
+    with psycopg.connect(base, autocommit=True) as c:
+        c.execute(f"CREATE SCHEMA {SCHEMA}")
+    db.DATABASE_URL = base + ("&" if "?" in base else "?") + f"options=-csearch_path%3D{SCHEMA}"
+else:
+    db.DATABASE_URL = None
+    db.DB_PATH = str(Path(__file__).parent / "logic_test.db")
+    Path(db.DB_PATH).unlink(missing_ok=True)
 db.init_db()
 
 failures = []
@@ -97,11 +125,15 @@ check("clear patient removes their events", [e for e in db.get_recent_events() i
 db.clear_all()
 check("clear all empties patients", db.get_all_phones(), [])
 check("clear all empties events", db.get_recent_events(), [])
-backups = list(Path(db.DB_PATH).parent.glob(Path(db.DB_PATH).name + ".backup-*"))
-check("clear all saved a backup copy", len(backups) >= 1, True)
-for b in backups:
-    b.unlink()
+if not POSTGRES:
+    backups = list(Path(db.DB_PATH).parent.glob(Path(db.DB_PATH).name + ".backup-*"))
+    check("clear all saved a backup copy", len(backups) >= 1, True)
+    for b in backups:
+        b.unlink()
 
 print(f"\n{'ALL PASSED' if not failures else 'FAILED: ' + ', '.join(failures)}")
-Path(db.DB_PATH).unlink(missing_ok=True)
+if POSTGRES:
+    drop_schema()
+else:
+    Path(db.DB_PATH).unlink(missing_ok=True)
 sys.exit(1 if failures else 0)

@@ -9,3 +9,11 @@ test_*.py
 e2e_test.py
 make_samples.py
 requirements-dev.txt
+.neon
+.claude
+.mcp.json
+skills-lock.json
+neon.ts
+package.json
+package-lock.json
+node_modules

@@ -34,7 +34,9 @@ class PgConn:
         import psycopg
         from psycopg.rows import dict_row
 
-        _local.conn = psycopg.connect(DATABASE_URL, row_factory=dict_row, autocommit=True)
+        _local.conn = psycopg.connect(
+            DATABASE_URL, row_factory=dict_row, autocommit=True, prepare_threshold=None
+        )
         return _local.conn
 
     def execute(self, sql, params=()):
