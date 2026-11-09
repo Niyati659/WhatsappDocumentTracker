@@ -145,7 +145,9 @@ async function refresh() {
   const ec = document.getElementById("events-container");
   ec.innerHTML = data.events.length ? data.events.map(e => {
     const time = new Date(e.created_at * 1000).toLocaleTimeString();
-    const detail = e.detail ? ` (name on document: ${esc(e.detail)})` : "";
+    const detail = e.detail
+      ? (e.event === "wrong_patient_suspected" ? ` (name on document: ${esc(e.detail)})` : ` (${esc(e.detail)})`)
+      : "";
     return `<div class="event-row"><span class="t">${time}</span><span>${esc(prettyPhone(e.phone))}</span><span class="tag ${esc(e.event)}">${esc(EVENT_LABELS[e.event] || e.event)}</span><span>${esc(e.doc_type || "")}${detail}</span></div>`;
   }).join("") : '<div class="empty">No activity yet.</div>';
 }

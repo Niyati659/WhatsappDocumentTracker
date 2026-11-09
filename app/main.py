@@ -3,6 +3,7 @@ import hashlib
 import os
 import re
 import secrets
+import traceback
 
 from dotenv import load_dotenv
 
@@ -207,8 +208,9 @@ def process_media(from_number, media_items):
                 continue
             for item in classify_document(file_bytes, content_type):
                 handle_classified_document(from_number, file_bytes, item)
-    except Exception:
-        db.log_event(from_number, None, "processing_failed")
+    except Exception as exc:
+        traceback.print_exc()
+        db.log_event(from_number, None, "processing_failed", detail=type(exc).__name__)
         return
 
     docs = db.get_documents_for_phone(from_number)

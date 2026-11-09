@@ -1,4 +1,5 @@
 import os
+from urllib.parse import urlparse
 
 import httpx
 from twilio.rest import Client
@@ -11,7 +12,11 @@ client = Client(ACCOUNT_SID, AUTH_TOKEN)
 
 
 def download_media(media_url):
-    response = httpx.get(media_url, auth=(ACCOUNT_SID, AUTH_TOKEN), follow_redirects=True)
+    if urlparse(media_url).hostname != "api.twilio.com":
+        raise ValueError("Media URL is not on api.twilio.com")
+    response = httpx.get(
+        media_url, auth=(ACCOUNT_SID, AUTH_TOKEN), follow_redirects=True, timeout=30
+    )
     response.raise_for_status()
     return response.content
 
