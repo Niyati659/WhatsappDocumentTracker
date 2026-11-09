@@ -1,0 +1,7 @@
+fastapi
+python-dotenv
+twilio
+google-genai
+python-multipart
+httpx
+psycopg[binary]

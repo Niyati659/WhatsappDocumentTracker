@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WhatsApp Document Tracker</title>
+<style>
+  :root {
+    --bg: #f4f5f7; --card: #fff; --head: #fafafa; --text: #1a1a1a; --muted: #666; --line: #eee;
+    --shadow: 0 1px 3px rgba(0,0,0,0.1);
+    --ok: #1a7f37; --warn: #9a6700; --miss: #bbb;
+    --tag-ok-bg: #e3f6e8; --tag-warn-bg: #fff3cd; --tag-bad-bg: #fde2e2; --tag-bad: #c01e1e; --tag-grey-bg: #eee; --tag-grey: #666;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #111418; --card: #1b1f25; --head: #20252c; --text: #eceff3; --muted: #9aa3af; --line: #2c333c;
+      --shadow: 0 1px 3px rgba(0,0,0,0.5);
+      --ok: #5fd37f; --warn: #f0c24b; --miss: #5b6572;
+      --tag-ok-bg: #12301c; --tag-warn-bg: #3a2e0a; --tag-bad-bg: #3b1616; --tag-bad: #ff8b82; --tag-grey-bg: #2c333c; --tag-grey: #b6bdc7;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #111418; --card: #1b1f25; --head: #20252c; --text: #eceff3; --muted: #9aa3af; --line: #2c333c;
+    --shadow: 0 1px 3px rgba(0,0,0,0.5);
+    --ok: #5fd37f; --warn: #f0c24b; --miss: #5b6572;
+    --tag-ok-bg: #12301c; --tag-warn-bg: #3a2e0a; --tag-bad-bg: #3b1616; --tag-bad: #ff8b82; --tag-grey-bg: #2c333c; --tag-grey: #b6bdc7;
+  }
+  body { font-family: -apple-system, Segoe UI, Arial, sans-serif; background: var(--bg); margin: 0; padding: 24px 16px; color: var(--text); }
+  .top { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 20px; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .sub { color: var(--muted); font-size: 13px; }
+  .toggle { background: var(--card); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 7px 12px; font-size: 13px; cursor: pointer; white-space: nowrap; box-shadow: var(--shadow); }
+  .table-wrap { overflow-x: auto; border-radius: 8px; box-shadow: var(--shadow); background: var(--card); }
+  table { border-collapse: collapse; width: 100%; background: var(--card); }
+  th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--line); font-size: 13px; }
+  th { background: var(--head); font-weight: 600; white-space: nowrap; }
+  td.doc, th.doc { text-align: center; }
+  .phone { font-weight: 600; white-space: nowrap; }
+  .pname { display: block; font-weight: 400; color: var(--muted); font-size: 12px; margin-top: 2px; }
+  .count { white-space: nowrap; font-weight: 600; }
+  .received { color: var(--ok); font-weight: 600; }
+  .blurry { color: var(--warn); font-weight: 600; }
+  .review { color: var(--warn); font-weight: 600; }
+  .missing { color: var(--miss); }
+  .mini { background: var(--card); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 2px 8px; font-size: 11px; cursor: pointer; margin-left: 4px; }
+  td.doc .mini { margin: 4px 0 0; }
+  .mini:disabled { opacity: .5; cursor: default; }
+  .actions { display: flex; gap: 8px; }
+  .danger { color: var(--tag-bad); }
+  .mini.flag { color: var(--tag-bad); border-color: var(--tag-bad); white-space: nowrap; }
+  .events { margin-top: 28px; background: var(--card); border-radius: 8px; padding: 16px; box-shadow: var(--shadow); }
+  .events h2 { font-size: 15px; margin: 0 0 8px; }
+  .event-row { font-size: 12px; padding: 5px 0; border-bottom: 1px solid var(--line); display: flex; gap: 10px; flex-wrap: wrap; align-items: baseline; }
+  .event-row:last-child { border-bottom: 0; }
+  .event-row .t { color: var(--muted); min-width: 72px; }
+  .tag { padding: 1px 6px; border-radius: 4px; font-size: 11px; font-weight: 600; }
+  .tag.received, .tag.approved_by_agent { background: var(--tag-ok-bg); color: var(--ok); }
+  .tag.name_reset_by_agent { background: var(--tag-grey-bg); color: var(--tag-grey); }
+  .tag.blurry { background: var(--tag-warn-bg); color: var(--warn); }
+  .tag.duplicate_ignored, .tag.unrecognised_document, .tag.auto_reply_failed, .tag.processing_failed { background: var(--tag-grey-bg); color: var(--tag-grey); }
+  .tag.wrong_patient_suspected { background: var(--tag-bad-bg); color: var(--tag-bad); }
+  .empty { color: var(--muted); padding: 20px; text-align: center; }
+</style>
+</head>
+<body>
+  <div class="top">
+    <div>
+      <h1>WhatsApp Document Tracker</h1>
+      <div class="sub">Auto-refreshing every 3s &middot; <span id="count"></span></div>
+    </div>
+    <div class="actions">
+      <button class="toggle danger" id="clear-all" type="button">Clear all</button>
+      <button class="toggle" id="theme-toggle" type="button">Dark mode</button>
+    </div>
+  </div>
+  <div id="table-container"></div>
+  <div class="events">
+    <h2>Recent activity</h2>
+    <div id="events-container"></div>
+  </div>
+
+<script>
+const EVENT_LABELS = {
+  received: "Document received",
+  blurry: "Unclear image, please resend",
+  duplicate_ignored: "Duplicate ignored",
+  wrong_patient_suspected: "Possible wrong patient",
+  unrecognised_document: "Unrecognised document",
+  auto_reply_failed: "Auto-reply not sent",
+  processing_failed: "Could not process a file",
+  approved_by_agent: "Approved by agent",
+  name_reset_by_agent: "Saved name reset by agent"
+};
+const SYMBOLS = { received: "&#10003;", blurry: "&#9888;", review: "?", missing: "&mdash;" };
+const TITLES = {
+  received: "Received",
+  blurry: "Unclear image, ask patient to resend",
+  review: "Name on the document does not match this patient. Check it, then approve.",
+  missing: "Missing"
+};
+
+function esc(s) {
+  return String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+}
+function prettyPhone(p) { return String(p).replace("whatsapp:", ""); }
+
+async function refresh() {
+  let data;
+  try {
+    const res = await fetch("/api/checklist");
+    if (!res.ok) return;
+    data = await res.json();
+  } catch (e) { return; }
+
+  document.getElementById("count").textContent = data.patients.length + " patient(s)";
+
+  const container = document.getElementById("table-container");
+  if (data.patients.length === 0) {
+    container.innerHTML = '<div class="table-wrap"><div class="empty">No documents received yet. Send a photo or PDF to your WhatsApp number.</div></div>';
+  } else {
+    const labels = data.patients[0].checklist.map(c => c.label);
+    let html = '<div class="table-wrap"><table><thead><tr><th>Patient (phone)</th><th>Received</th>';
+    labels.forEach(l => html += `<th class="doc">${esc(l)}</th>`);
+    html += "</tr></thead><tbody>";
+    data.patients.forEach(p => {
+      const got = p.checklist.filter(c => c.status === "received").length;
+      const name = p.name
+        ? `<span class="pname">${esc(p.name)} <button class="mini" data-act="reset-name" data-phone="${esc(p.phone)}" title="Forget the saved name so the next document sets it again">Reset name</button></span>`
+        : "";
+      const clearBtn = `<span class="pname"><button class="mini danger" data-act="clear" data-phone="${esc(p.phone)}" data-confirm="Delete ALL records for ${esc(prettyPhone(p.phone))}? This cannot be undone." title="Delete this patient and all their records">Clear patient</button></span>`;
+      html += `<tr><td class="phone">${esc(prettyPhone(p.phone))}${name}${clearBtn}</td><td class="count">${got} / ${p.checklist.length}</td>`;
+      p.checklist.forEach(c => {
+        const title = esc(TITLES[c.status] || c.status) + (c.files > 1 ? ` (${c.files} files)` : "");
+        const approve = c.to_check > 0
+          ? `<br><button class="mini flag" data-act="approve" data-phone="${esc(p.phone)}" data-type="${esc(c.type)}" title="${c.to_check} file(s) with a different name on them. Click to accept them.">${c.to_check} to check &middot; Approve</button>`
+          : "";
+        html += `<td class="doc ${esc(c.status)}" title="${title}">${SYMBOLS[c.status] || ""}${approve}</td>`;
+      });
+      html += "</tr>";
+    });
+    html += "</tbody></table></div>";
+    container.innerHTML = html;
+  }
+
+  const ec = document.getElementById("events-container");
+  ec.innerHTML = data.events.length ? data.events.map(e => {
+    const time = new Date(e.created_at * 1000).toLocaleTimeString();
+    const detail = e.detail ? ` (name on document: ${esc(e.detail)})` : "";
+    return `<div class="event-row"><span class="t">${time}</span><span>${esc(prettyPhone(e.phone))}</span><span class="tag ${esc(e.event)}">${esc(EVENT_LABELS[e.event] || e.event)}</span><span>${esc(e.doc_type || "")}${detail}</span></div>`;
+  }).join("") : '<div class="empty">No activity yet.</div>';
+}
+
+document.getElementById("table-container").addEventListener("click", async (ev) => {
+  const btn = ev.target.closest("button[data-act]");
+  if (!btn) return;
+  if (btn.dataset.confirm && !window.confirm(btn.dataset.confirm)) return;
+  btn.disabled = true;
+  try {
+    await fetch("/api/patients/" + btn.dataset.act, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Requested-With": "portal" },
+      body: JSON.stringify({ phone: btn.dataset.phone, doc_type: btn.dataset.type || null })
+    });
+  } catch (e) {}
+  refresh();
+});
+
+document.getElementById("clear-all").addEventListener("click", async () => {
+  if (!window.confirm("Delete ALL patients, documents and activity? A backup copy of the database is saved first.")) return;
+  try {
+    await fetch("/api/clear-all", { method: "POST", headers: { "X-Requested-With": "portal" } });
+  } catch (e) {}
+  refresh();
+});
+
+const root = document.documentElement;
+const toggleBtn = document.getElementById("theme-toggle");
+function isDark() {
+  const t = root.getAttribute("data-theme");
+  return t ? t === "dark" : window.matchMedia("(prefers-color-scheme: dark)").matches;
+}
+function syncToggle() { toggleBtn.textContent = isDark() ? "Light mode" : "Dark mode"; }
+try {
+  const saved = localStorage.getItem("theme");
+  if (saved === "light" || saved === "dark") root.setAttribute("data-theme", saved);
+} catch (e) {}
+syncToggle();
+toggleBtn.addEventListener("click", () => {
+  const next = isDark() ? "light" : "dark";
+  root.setAttribute("data-theme", next);
+  try { localStorage.setItem("theme", next); } catch (e) {}
+  syncToggle();
+});
+
+refresh();
+setInterval(refresh, 3000);
+</script>
+</body>
+</html>

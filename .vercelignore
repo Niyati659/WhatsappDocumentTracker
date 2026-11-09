@@ -1,0 +1,11 @@
+.env
+.env.*
+.venv
+samples
+*.db
+*.db.backup-*
+__pycache__
+test_*.py
+e2e_test.py
+make_samples.py
+requirements-dev.txt
