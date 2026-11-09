@@ -30,7 +30,7 @@ MODELS = [
 ]
 
 OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434").rstrip("/")
-OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen2.5vl:3b")
+OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen3-vl:4b")
 OLLAMA_MAX_PDF_PAGES = 8
 
 PROMPT_BODY = f"""You classify documents sent by insurance claim patients.
@@ -115,59 +115,88 @@ def _normalise(results):
 
 # ---------------------------------------------------------------- Gemini
 
-_gemini_client = None
-_exhausted_until = {}
-EXHAUSTED_COOLDOWN_SECONDS = 3600
+DAILY_COOLDOWN_SECONDS = 3600
+DEFAULT_COOLDOWN_SECONDS = 60
+MAX_WAIT_SECONDS = 40
+
+_gemini_clients = {}
+_cooldown_until = {}
 
 
-def _gemini():
-    global _gemini_client
-    if _gemini_client is None:
+def _gemini_keys():
+    names = ["GEMINI_API_KEY"] + [f"GEMINI_API_KEY_{n}" for n in range(2, 10)]
+    values = [os.environ.get(name, "") for name in names]
+    values += os.environ.get("GEMINI_API_KEYS", "").split(",")
+    keys = []
+    for value in values:
+        value = value.strip()
+        if value and value not in keys:
+            keys.append(value)
+    if not keys:
+        raise KeyError("GEMINI_API_KEY")
+    return keys
+
+
+def _gemini(key):
+    if key not in _gemini_clients:
         from google import genai
 
-        _gemini_client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
-    return _gemini_client
+        _gemini_clients[key] = genai.Client(api_key=key)
+    return _gemini_clients[key]
+
+
+def _call_gemini(key, model, file_bytes, content_type):
+    from google.genai import types
+
+    return _gemini(key).models.generate_content(
+        model=model,
+        contents=[
+            types.Part.from_bytes(data=file_bytes, mime_type=content_type),
+            "Classify this.",
+        ],
+        config=types.GenerateContentConfig(
+            system_instruction=SYSTEM_PROMPT,
+            response_mime_type="application/json",
+        ),
+    )
+
+
+def _cooldown_for(exc):
+    if "per day" in str(exc):
+        return DAILY_COOLDOWN_SECONDS
+    match = re.search(r"retry in ([\d.]+)s", str(exc))
+    return float(match.group(1)) + 1 if match else DEFAULT_COOLDOWN_SECONDS
 
 
 def _gemini_generate(file_bytes, content_type):
+    """Try every key and model, moving on whenever one hits its rate limit."""
     from google.genai import errors
 
-    for model in MODELS:
-        is_last = model == MODELS[-1]
-        if _exhausted_until.get(model, 0) > time.time() and not is_last:
-            continue
-        try:
-            return _gemini_generate_with(model, file_bytes, content_type)
-        except errors.APIError as exc:
-            if exc.code == 429 and "per day" in str(exc) and not is_last:
-                _exhausted_until[model] = time.time() + EXHAUSTED_COOLDOWN_SECONDS
-                continue
-            raise
-
-
-def _gemini_generate_with(model, file_bytes, content_type):
-    from google.genai import errors, types
-
-    for attempt in range(MAX_ATTEMPTS):
-        try:
-            return _gemini().models.generate_content(
-                model=model,
-                contents=[
-                    types.Part.from_bytes(data=file_bytes, mime_type=content_type),
-                    "Classify this.",
-                ],
-                config=types.GenerateContentConfig(
-                    system_instruction=SYSTEM_PROMPT,
-                    response_mime_type="application/json",
-                ),
-            )
-        except errors.APIError as exc:
-            daily = exc.code == 429 and "per day" in str(exc)
-            retryable = exc.code in (429, 500, 503) and not daily
-            if not retryable or attempt == MAX_ATTEMPTS - 1:
-                raise
-            match = re.search(r"retry in ([\d.]+)s", str(exc))
-            time.sleep(float(match.group(1)) + 1 if match else 5 * (attempt + 1))
+    keys = _gemini_keys()
+    last_error = None
+    for _round in range(2):
+        for key in keys:
+            for model in MODELS:
+                if _cooldown_until.get((key, model), 0) > time.time():
+                    continue
+                for attempt in range(3):
+                    try:
+                        return _call_gemini(key, model, file_bytes, content_type)
+                    except errors.APIError as exc:
+                        last_error = exc
+                        if exc.code == 429:
+                            _cooldown_until[(key, model)] = time.time() + _cooldown_for(exc)
+                            break
+                        if exc.code in (500, 503) and attempt < 2:
+                            time.sleep(2 * (attempt + 1))
+                            continue
+                        raise
+        soonest = min((t for t in _cooldown_until.values() if t > time.time()), default=0)
+        wait = soonest - time.time()
+        if wait <= 0 or wait > MAX_WAIT_SECONDS:
+            break
+        time.sleep(wait + 0.5)
+    raise last_error or RuntimeError("All Gemini keys are currently rate limited")
 
 
 def _classify_gemini(file_bytes, content_type):
