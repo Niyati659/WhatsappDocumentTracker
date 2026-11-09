@@ -31,6 +31,9 @@ os.environ["GEMINI_API_KEY"] = "key-a"
 os.environ["GEMINI_API_KEY_2"] = "key-b"
 os.environ["GEMINI_API_KEYS"] = "key-c, key-a ,"
 check("keys are collected, deduplicated, in order", classify._gemini_keys(), ["key-a", "key-b", "key-c"])
+os.environ["GEMINI_API_KEY3"] = "key-d"
+check("names without an underscore also work", classify._gemini_keys(), ["key-a", "key-b", "key-d", "key-c"])
+del os.environ["GEMINI_API_KEY3"]
 
 calls = []
 

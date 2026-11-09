@@ -124,8 +124,11 @@ _cooldown_until = {}
 
 
 def _gemini_keys():
-    names = ["GEMINI_API_KEY"] + [f"GEMINI_API_KEY_{n}" for n in range(2, 10)]
-    values = [os.environ.get(name, "") for name in names]
+    pattern = re.compile(r"^GEMINI_API_KEY_?(\d*)$")
+    numbered = sorted(
+        (int(m.group(1) or 1), name) for name in os.environ if (m := pattern.match(name))
+    )
+    values = [os.environ[name] for _, name in numbered]
     values += os.environ.get("GEMINI_API_KEYS", "").split(",")
     keys = []
     for value in values:
