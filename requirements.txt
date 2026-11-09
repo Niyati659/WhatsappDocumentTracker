@@ -1,7 +1,7 @@
 fastapi
 python-dotenv
 twilio
-google-genai
+google-genai==2.33.0
 python-multipart
 httpx
 psycopg[binary]
